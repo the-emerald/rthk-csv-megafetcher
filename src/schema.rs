@@ -4,7 +4,7 @@ use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
 use anyhow::anyhow;
 
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Language {
     #[serde(rename = "中文")]
     Chinese,
@@ -24,7 +24,7 @@ impl FromStr for Language {
     }
 }
 
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Audio,

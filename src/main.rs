@@ -33,5 +33,12 @@ fn main() -> anyhow::Result<()> {
         to_fetch.push(record);
     }
 
+    // Filter
+    let to_fetch = to_fetch
+        .into_iter()
+        .filter(|entry| language.contains(&entry.language))
+        .filter(|entry| format.contains(&entry.format))
+        .collect::<Vec<_>>();
+
     Ok(())
 }
