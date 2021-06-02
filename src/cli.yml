@@ -1,0 +1,23 @@
+name: RTHK CSV Fetcher
+version: "0.1.0"
+author: Emerald <no-email@example.com>
+about: Fetches resources from a CSV file of RTHK resources
+args:
+  - source:
+      short: s
+      long: source
+      value_name: FILE
+      help: Path to the CSV file.
+      required: true
+
+  - language:
+      short: l
+      long: language
+      value_name: LANG
+      help: Only fetch resources in that language. Accepted values are "english" or "chinese".
+
+  - format:
+      short: f
+      long: format
+      value_name: FORMAT
+      help: Only fetch either "audio" or "video" resources.
