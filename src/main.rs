@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
             ProgressStyle::default_bar()
                 .template("{prefix:.bold.dim} {spinner} {msg} [{elapsed_precise}] [{wide_bar}] {pos}/{len} ({eta})")
         );
-        pb.set_message("Attempt 1");
+        pb.set_message("Fetching");
         pb.set_prefix("[2/6]");
         pb
     };
@@ -98,12 +98,16 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn write_to_file(response: Response, entry: Entry) -> anyhow::Result<Entry> {
-    // Turn into bytes
-    let bytes = response.text().await?;
     let file_name = format!("{}.{}", &entry.og_title, &entry.format.extension());
-    let path = Path::new(OUTPUT).join(&file_name);
+    let path = Path::new(OUTPUT)
+        .join(&entry.language.to_string())
+        .join(&entry.programme_title.to_string())
+        .join(&file_name);
+    create_dir_all(path.clone())?;
     let mut file = File::create(path)?;
-    // Write to file
+
+    // Turn into bytes and write to file
+    let bytes = response.text().await?;
     copy(&mut bytes.as_bytes(), &mut file)?;
     Ok(entry)
 }

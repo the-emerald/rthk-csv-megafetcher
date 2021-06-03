@@ -24,6 +24,15 @@ impl FromStr for Language {
     }
 }
 
+impl ToString for Language {
+    fn to_string(&self) -> String {
+        match self {
+            Chinese => "chinese".to_string(),
+            English => "english".to_string(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
@@ -39,6 +48,15 @@ impl FromStr for Format {
             "audio" => Ok(Audio),
             "video" => Ok(Video),
             _ => Err(anyhow!("invalid format")),
+        }
+    }
+}
+
+impl ToString for Format {
+    fn to_string(&self) -> String {
+        match self {
+            Audio => "audio".to_string(),
+            Video => "video".to_string(),
         }
     }
 }
