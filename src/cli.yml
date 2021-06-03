@@ -21,3 +21,10 @@ args:
       long: format
       value_name: FORMAT
       help: Only fetch either "audio" or "video" resources.
+
+  - output:
+        short: o
+        long: output
+        value_name: DIR
+        help: Output directory for fetched content
+        default_value: "./output"

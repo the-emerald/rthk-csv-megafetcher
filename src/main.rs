@@ -13,7 +13,6 @@ use std::str::FromStr;
 
 pub mod schema;
 
-pub const OUTPUT: &str = "./output";
 pub const RETRIES: usize = 5;
 
 #[tokio::main]
@@ -35,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         .transpose()?
         .map(|fmt| vec![fmt])
         .unwrap_or_else(|| vec![Audio, Video]);
+    let output_dir = Path::new(args.value_of("output").unwrap());
 
     let mut to_fetch = Vec::new();
     let mut reader = csv::Reader::from_reader(source);
@@ -64,14 +64,14 @@ async fn main() -> anyhow::Result<()> {
     // Set up what we need for fetching
     let semaphore = tokio::sync::Semaphore::new(32);
     let client = reqwest::Client::new();
-    create_dir_all(Path::new(OUTPUT))?;
+    create_dir_all(output_dir)?;
 
     let download_pbar = {
         let pb = ProgressBar::new(to_fetch.len() as u64).with_style(
             ProgressStyle::default_bar()
                 .template("{prefix:.bold.dim} {spinner} {msg} [{elapsed_precise}] [{wide_bar}] {pos}/{len} ({eta})")
         );
-        pb.set_message("Fetching");
+        pb.set_message("Fetching content (pass 1)");
         pb.set_prefix("[2/6]");
         pb
     };
@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             .get(entry.file_url.clone())
             .send()
             .map_err(|e| anyhow!(e))
-            .and_then(|response| write_to_file(response, entry))
+            .and_then(|response| write_to_file(response, entry, output_dir))
             .await;
         download_pbar.inc(1);
         r
@@ -97,13 +97,13 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn write_to_file(response: Response, entry: Entry) -> anyhow::Result<Entry> {
-    let file_name = format!("{}.{}", &entry.og_title, &entry.format.extension());
-    let path = Path::new(OUTPUT)
+async fn write_to_file(response: Response, entry: Entry, output_dir: &Path) -> anyhow::Result<Entry> {
+    let file_name = format!("{}.{}", &entry.episode_title, &entry.format.extension());
+    let path = output_dir
         .join(&entry.language.to_string())
-        .join(&entry.programme_title.to_string())
-        .join(&file_name);
+        .join(&entry.programme_title.to_string());
     create_dir_all(path.clone())?;
+    let path = path.join(&file_name);
     let mut file = File::create(path)?;
 
     // Turn into bytes and write to file
