@@ -1,19 +1,20 @@
 use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
-use crate::schema::{Entry, Format, Language};
+use crate::schema::{Entry, Format, Id, Language};
 use anyhow::anyhow;
 use clap::{load_yaml, App};
 use futures::TryFutureExt;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Response;
+use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
-use std::io::{copy, BufReader};
+use std::io::{copy, BufReader, BufWriter};
 use std::path::Path;
 use std::str::FromStr;
 
 pub mod schema;
 
-pub const RETRIES: usize = 5;
+pub const DOWNLOADED_JSON: &str = "downloaded.json";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,7 +36,21 @@ async fn main() -> anyhow::Result<()> {
         .map(|fmt| vec![fmt])
         .unwrap_or_else(|| vec![Audio, Video]);
     let output_dir = Path::new(args.value_of("output").unwrap());
+    let force = args.is_present("force");
 
+    create_dir_all(output_dir)?;
+
+    // Read list of already-downloaded files
+    let mut downloaded_files: HashSet<Id> = if output_dir.join(DOWNLOADED_JSON).exists() {
+        serde_json::from_reader(BufReader::new(File::open(
+            output_dir.join(DOWNLOADED_JSON),
+        )?))?
+    } else {
+        File::create(output_dir.join(DOWNLOADED_JSON))?;
+        HashSet::new()
+    };
+
+    // Read CSV
     let mut to_fetch = Vec::new();
     let mut reader = csv::Reader::from_reader(source);
     let csv_reading_pbar = {
@@ -43,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             ProgressStyle::default_spinner().template("{prefix:.bold.dim} {spinner} {wide_msg}"),
         );
         pb.set_message("Reading manifest");
-        pb.set_prefix("[1/6]");
+        pb.set_prefix("[1/2]");
         pb
     };
 
@@ -61,43 +76,84 @@ async fn main() -> anyhow::Result<()> {
         .filter(|entry| format.contains(&entry.format))
         .collect::<Vec<_>>();
 
-    // Set up what we need for fetching
-    let semaphore = tokio::sync::Semaphore::new(32);
-    let client = reqwest::Client::new();
-    create_dir_all(output_dir)?;
-
-    let download_pbar = {
-        let pb = ProgressBar::new(to_fetch.len() as u64).with_style(
-            ProgressStyle::default_bar()
-                .template("{prefix:.bold.dim} {spinner} {msg} [{elapsed_precise}] [{wide_bar}] {pos}/{len} ({eta})")
-        );
-        pb.set_message("Fetching content (pass 1)");
-        pb.set_prefix("[2/6]");
-        pb
+    // If not force, then also filter files already downloaded
+    let to_fetch = if !force {
+        to_fetch
+            .into_iter()
+            .filter(|entry| !downloaded_files.contains(&entry.id))
+            .collect()
+    } else {
+        to_fetch
     };
 
-    let fetched = futures::future::join_all(to_fetch.into_iter().map(|entry| async {
-        // Get semaphore
-        let _permit = semaphore.acquire().await?;
+    // Set up what we need for fetching
+    let semaphore = tokio::sync::Semaphore::new(8);
+    let client = reqwest::Client::new();
 
-        // Reqwest from client
-        let r = client
-            .get(entry.file_url.clone())
-            .send()
-            .map_err(|e| anyhow!(e))
-            .and_then(|response| write_to_file(response, entry, output_dir))
-            .await;
-        download_pbar.inc(1);
-        r
-    }))
-    .await
-    .into_iter()
-    .collect::<Vec<anyhow::Result<Entry>>>();
+    let currently_downloading_pbar = MultiProgress::new();
+    let total_progress_pb = currently_downloading_pbar.add(ProgressBar::new(to_fetch.len() as u64).with_style(
+        ProgressStyle::default_bar()
+            .template("{prefix:.bold.dim} {spinner} {msg} [{elapsed_precise}] [{wide_bar}] {pos}/{len} ({eta_precise})")
+    )
+        .with_message("Fetching content")
+        .with_prefix("[2/2]"));
+
+    let (ok, failed): (Vec<_>, Vec<_>) =
+        futures::future::join_all(to_fetch.into_iter().map(|entry| async {
+            // Get semaphore
+            let _permit = semaphore.acquire().await?;
+
+            // Set up pbar
+            let name_bar = currently_downloading_pbar.add(
+                ProgressBar::new_spinner()
+                    .with_style(ProgressStyle::default_spinner().template("{wide_msg}"))
+                    .with_message(entry.og_title.clone()),
+            );
+
+            // Reqwest from client
+            let r = client
+                .get(entry.file_url.clone())
+                .send()
+                .map_err(|e| anyhow!(e))
+                .and_then(|response| write_to_file(response, entry, output_dir))
+                .await;
+
+            total_progress_pb.inc(1);
+            name_bar.finish_and_clear();
+            r
+        }))
+        .await
+        .into_iter()
+        .collect::<Vec<anyhow::Result<Entry>>>()
+        .into_iter()
+        .partition(Result::is_ok);
+
+    // Update downloaded set
+    for x in &ok {
+        // Always fine since we partitioned already.
+        let r = x.as_ref().unwrap();
+        downloaded_files.insert(r.id);
+    }
+
+    // Write successes to downloaded.json
+    serde_json::to_writer(
+        BufWriter::new(File::open(output_dir.join(DOWNLOADED_JSON))?),
+        &downloaded_files,
+    )?;
+
+    println!("Fetched {} files with {} failures.", ok.len(), failed.len());
+    if !failed.is_empty() {
+        println!("Run the program again to retry failed downloads.");
+    }
 
     Ok(())
 }
 
-async fn write_to_file(response: Response, entry: Entry, output_dir: &Path) -> anyhow::Result<Entry> {
+async fn write_to_file(
+    response: Response,
+    entry: Entry,
+    output_dir: &Path,
+) -> anyhow::Result<Entry> {
     let file_name = format!("{}.{}", &entry.episode_title, &entry.format.extension());
     let path = output_dir
         .join(&entry.language.to_string())

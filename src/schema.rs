@@ -72,8 +72,8 @@ impl Format {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash)]
 pub struct Entry {
-    pub pid: u32,
-    pub eid: u32,
+    #[serde(flatten)]
+    pub id: Id,
     pub programme_title: String,
     pub episode_title: String,
     pub episode_date: String,
@@ -96,4 +96,10 @@ where
 {
     let f: Option<f32> = Option::deserialize(deserializer)?;
     Ok(f.map(|v| v as u32))
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub struct Id {
+    pid: u32,
+    eid: u32,
 }

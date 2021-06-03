@@ -28,3 +28,8 @@ args:
         value_name: DIR
         help: Output directory for fetched content
         default_value: "./output"
+
+  - force:
+      short: f
+      long: force
+      help: Force re-download of all selected files in manifest, ignoring already downloaded items.
