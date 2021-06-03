@@ -4,8 +4,9 @@ use crate::schema::{Entry, Format, Language};
 use anyhow::anyhow;
 use clap::{load_yaml, App};
 use futures::TryFutureExt;
-use std::fs::{File, create_dir_all};
-use std::io::{copy, BufReader};
+use indicatif::{ProgressBar, ProgressFinish, ProgressIterator, ProgressStyle};
+use std::fs::{create_dir_all, File};
+use std::io::{copy, BufRead, BufReader};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -35,11 +36,21 @@ async fn main() -> anyhow::Result<()> {
 
     let mut to_fetch = Vec::new();
     let mut reader = csv::Reader::from_reader(source);
+    let csv_reading_pbar = {
+        let pb = ProgressBar::new_spinner().with_style(
+            ProgressStyle::default_spinner().template("{prefix:.bold.dim} {spinner} {wide_msg}"),
+        );
+        pb.set_message("Reading from manifest");
+        pb.set_prefix("[1/4]");
+        pb
+    };
 
     for line in reader.deserialize() {
         let record: Entry = line?;
         to_fetch.push(record);
+        csv_reading_pbar.tick()
     }
+    csv_reading_pbar.finish_with_message("Reading from manifest (done)");
 
     // Filter
     let to_fetch = to_fetch
