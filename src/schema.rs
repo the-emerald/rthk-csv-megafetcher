@@ -1,8 +1,8 @@
-use serde::Deserialize;
-use std::str::FromStr;
 use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
 use anyhow::anyhow;
+use serde::Deserialize;
+use std::str::FromStr;
 
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Language {
