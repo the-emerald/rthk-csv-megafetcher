@@ -2,10 +2,9 @@ use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
 use crate::schema::{Entry, Format, Language};
 use anyhow::anyhow;
-use bytes::Bytes;
 use clap::{load_yaml, App};
-use futures::{StreamExt, TryFutureExt};
-use std::fs::File;
+use futures::TryFutureExt;
+use std::fs::{File, create_dir_all};
 use std::io::{copy, BufReader};
 use std::path::Path;
 use std::str::FromStr;
@@ -49,23 +48,33 @@ async fn main() -> anyhow::Result<()> {
         .filter(|entry| format.contains(&entry.format))
         .collect::<Vec<_>>();
 
+    // Set up what we need for fetching
     let semaphore = tokio::sync::Semaphore::new(12);
     let client = reqwest::Client::new();
+    create_dir_all(Path::new(OUTPUT))?;
 
     let fetched = futures::future::join_all(to_fetch.into_iter().map(|entry| async {
         // Get semaphore
-        semaphore.acquire().await;
+        let _permit = semaphore.acquire().await?;
+
+        // Reqwest from client
         client
             .get(entry.file_url.clone())
             .send()
-            .map_err(|e| Err(anyhow!(e)))
+            .map_err(|e| anyhow!(e))
             .and_then(|response| async {
+                // Turn into bytes
                 let bytes = response.text().await?;
                 let path = Path::new(OUTPUT).join(&entry.og_title);
                 let mut file = File::create(path)?;
+
+                // Write to file
                 copy(&mut bytes.as_bytes(), &mut file)?;
+
+                // Keep the entry
                 Ok(entry)
             })
+            .await
     }))
     .await
     .into_iter()
