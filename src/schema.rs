@@ -1,10 +1,10 @@
 use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
 use anyhow::anyhow;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
 
-#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Language {
     #[serde(rename = "中文")]
     Chinese,
@@ -24,7 +24,7 @@ impl FromStr for Language {
     }
 }
 
-#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Audio,
@@ -43,14 +43,24 @@ impl FromStr for Format {
     }
 }
 
-#[derive(Deserialize, Clone, Debug)]
+impl Format {
+    pub fn extension(&self) -> &str {
+        match self {
+            Audio => "mp3",
+            Video => "mp4",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Hash)]
 pub struct Entry {
     pub pid: u32,
     pub eid: u32,
     pub programme_title: String,
     pub episode_title: String,
     pub episode_date: String,
-    pub duration_seconds: Option<f32>,
+    #[serde(deserialize_with = "de_from_f32")]
+    pub duration_seconds: Option<u32>,
     pub og_title: String,
     pub og_description: String,
     pub cids: String,
@@ -60,4 +70,12 @@ pub struct Entry {
     pub rss_url: String,
     pub language: Language,
     pub format: Format,
+}
+
+fn de_from_f32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let f: Option<f32> = Option::deserialize(deserializer)?;
+    Ok(f.map(|v| v as u32))
 }
