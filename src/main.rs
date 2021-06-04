@@ -175,13 +175,33 @@ async fn write_to_file(
     entry: Entry,
     output_dir: &Path,
 ) -> anyhow::Result<Entry> {
-    let file_name = format!("{}.{}", &entry.episode_title, &entry.format.extension());
     let path = output_dir
         .join(&entry.language.to_string())
         .join(&entry.programme_title.to_string());
     create_dir_all(path.clone())?;
-    let path = path.join(&file_name);
-    let mut file = File::create(path)?;
+
+    let mut file = File::create(path.join({
+        let file_name = {
+            let mut f = format!("{}_{}", &entry.episode_date, &entry.episode_title);
+            let mut count = 0;
+            loop {
+                // Check if the file name is used
+                if !path.join(&f).exists() {
+                    break f;
+                }
+                count += 1;
+                f = format!("{}_{}_{}", &entry.episode_date, &entry.episode_title, count);
+            }
+        };
+        let extension = response
+            .url()
+            .path_segments()
+            .and_then(|segments| segments.last())
+            .and_then(|file_name| file_name.split('.').nth(1))
+            .unwrap_or("");
+
+        format!("{}.{}", file_name, extension)
+    }))?;
 
     // Turn into bytes and write to file
     let bytes = response.bytes().await?;
