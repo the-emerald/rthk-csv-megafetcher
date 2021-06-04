@@ -118,9 +118,15 @@ async fn main() -> anyhow::Result<()> {
             );
             name_bar.inc(1);
 
+            // Prefer m3u8 if possible
+            let url = entry
+                .m3u8_url
+                .clone()
+                .unwrap_or_else(|| entry.file_url.clone());
+
             // Make request from client
             let r = client
-                .get(entry.file_url.clone())
+                .get(url)
                 .send()
                 .map_err(|e| anyhow!(e))
                 .and_then(|response| write_to_file(response, entry, output_dir))
@@ -171,7 +177,7 @@ async fn write_to_file(
     let mut file = File::create(path)?;
 
     // Turn into bytes and write to file
-    let bytes = response.text().await?;
-    copy(&mut bytes.as_bytes(), &mut file)?;
+    let bytes = response.bytes().await?;
+    copy(&mut bytes.as_ref(), &mut file)?;
     Ok(entry)
 }
