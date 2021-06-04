@@ -129,6 +129,13 @@ async fn main() -> anyhow::Result<()> {
                 .get(url)
                 .send()
                 .map_err(|e| anyhow!(e))
+                .and_then(|response: Response| async {
+                    response
+                        .status()
+                        .is_success()
+                        .then(|| response)
+                        .ok_or_else(|| anyhow!("not 200"))
+                })
                 .and_then(|response| write_to_file(response, entry, output_dir))
                 .await;
 
