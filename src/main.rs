@@ -3,6 +3,7 @@ use crate::schema::Language::{Chinese, English};
 use crate::schema::{Entry, Format, Id, Language};
 use anyhow::anyhow;
 use clap::{load_yaml, App};
+use core::time::Duration;
 use futures::TryFutureExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Response;
@@ -87,8 +88,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Set up what we need for fetching
-    let semaphore = tokio::sync::Semaphore::new(8);
-    let client = reqwest::Client::new();
+    let semaphore = tokio::sync::Semaphore::new(16);
+    let client = reqwest::ClientBuilder::new()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(15))
+        .build()?;
 
     let currently_downloading_pbar = MultiProgress::new();
     let total_progress_pb = currently_downloading_pbar.add(ProgressBar::new(to_fetch.len() as u64).with_style(
@@ -106,11 +110,15 @@ async fn main() -> anyhow::Result<()> {
             // Set up pbar
             let name_bar = currently_downloading_pbar.add(
                 ProgressBar::new_spinner()
-                    .with_style(ProgressStyle::default_spinner().template("{wide_msg}"))
-                    .with_message(entry.og_title.clone()),
+                    .with_style(
+                        ProgressStyle::default_spinner().template("{prefix:.bold.dim} {wide_msg}"),
+                    )
+                    .with_message(entry.og_title.clone())
+                    .with_prefix("[DL]"),
             );
+            name_bar.inc(1);
 
-            // Reqwest from client
+            // Make request from client
             let r = client
                 .get(entry.file_url.clone())
                 .send()
