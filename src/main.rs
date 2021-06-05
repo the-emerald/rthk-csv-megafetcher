@@ -166,7 +166,7 @@ async fn main() -> anyhow::Result<()> {
     // Write successes to downloaded.json
     serde_json::to_writer(
         BufWriter::new(
-            File::open(output_dir.join(DOWNLOADED_JSON))
+            File::create(output_dir.join(DOWNLOADED_JSON))
                 .context("could not open downloaded.json for writing")?,
         ),
         &downloaded_files,
