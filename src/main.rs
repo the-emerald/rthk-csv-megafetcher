@@ -1,7 +1,7 @@
 use crate::schema::Format::{Audio, Video};
 use crate::schema::Language::{Chinese, English};
 use crate::schema::{Entry, Format, Id, Language};
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use clap::{load_yaml, App};
 use core::time::Duration;
 use futures::TryFutureExt;
@@ -43,11 +43,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Read list of already-downloaded files
     let mut downloaded_files: HashSet<Id> = if output_dir.join(DOWNLOADED_JSON).exists() {
-        serde_json::from_reader(BufReader::new(File::open(
-            output_dir.join(DOWNLOADED_JSON),
-        )?))?
+        serde_json::from_reader(BufReader::new(
+            File::open(output_dir.join(DOWNLOADED_JSON))
+                .context("could not open downloaded.json")?,
+        ))
+        .context("could not read downloaded.json")?
     } else {
-        File::create(output_dir.join(DOWNLOADED_JSON))?;
+        File::create(output_dir.join(DOWNLOADED_JSON))
+            .context("could not create downloaded.json")?;
         HashSet::new()
     };
 
@@ -63,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
         pb
     };
 
-    for line in reader.deserialize() {
-        let record: Entry = line?;
+    for (idx, line) in reader.deserialize().enumerate() {
+        let record: Entry = line.with_context(|| format!("could not deserialize line {}", idx))?;
         to_fetch.push(record);
     }
 
@@ -92,7 +95,8 @@ async fn main() -> anyhow::Result<()> {
     let client = reqwest::ClientBuilder::new()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(15))
-        .build()?;
+        .build()
+        .context("could not build client")?;
 
     let currently_downloading_pbar = MultiProgress::new();
     let total_progress_pb = currently_downloading_pbar.add(ProgressBar::new(to_fetch.len() as u64).with_style(
@@ -105,7 +109,10 @@ async fn main() -> anyhow::Result<()> {
     let (ok, failed): (Vec<_>, Vec<_>) =
         futures::future::join_all(to_fetch.into_iter().map(|entry| async {
             // Get semaphore
-            let _permit = semaphore.acquire().await?;
+            let _permit = semaphore
+                .acquire()
+                .await
+                .context("could not acquire semaphore")?;
 
             // Set up pbar
             let name_bar = currently_downloading_pbar.add(
@@ -158,9 +165,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Write successes to downloaded.json
     serde_json::to_writer(
-        BufWriter::new(File::open(output_dir.join(DOWNLOADED_JSON))?),
+        BufWriter::new(
+            File::open(output_dir.join(DOWNLOADED_JSON))
+                .context("could not open downloaded.json for writing")?,
+        ),
         &downloaded_files,
-    )?;
+    )
+    .context("could not write to downloaded.json")?;
 
     println!("Fetched {} files with {} failures.", ok.len(), failed.len());
     if !failed.is_empty() {
@@ -178,21 +189,16 @@ async fn write_to_file(
     let path = output_dir
         .join(&entry.language.to_string())
         .join(&entry.programme_title.to_string());
-    create_dir_all(path.clone())?;
+    create_dir_all(path.clone())
+        .with_context(|| format!("could not create path {:?}", path.clone()))?;
 
-    let mut file = File::create(path.join({
-        let file_name = {
-            let mut f = format!("{}_{}", &entry.episode_date, &entry.episode_title);
-            let mut count = 0;
-            loop {
-                // Check if the file name is used
-                if !path.join(&f).exists() {
-                    break f;
-                }
-                count += 1;
-                f = format!("{}_{}_{}", &entry.episode_date, &entry.episode_title, count);
-            }
-        };
+    let full_file_name = {
+        let file_name = format!("{}_{}_{}",
+                                &entry.id.eid,
+                                &entry.episode_date,
+                                truncate_chars(&entry.episode_title, 32)
+        );
+
         let extension = response
             .url()
             .path_segments()
@@ -201,10 +207,24 @@ async fn write_to_file(
             .unwrap_or("");
 
         format!("{}.{}", file_name, extension)
-    }))?;
+    };
+
+    let mut file = File::create(path.join(full_file_name.clone()))
+        .with_context(|| format!("could not create file {:?}", full_file_name))?;
 
     // Turn into bytes and write to file
-    let bytes = response.bytes().await?;
-    copy(&mut bytes.as_ref(), &mut file)?;
+    let bytes = response
+        .bytes()
+        .await
+        .with_context(|| format!("could not get bytes for {:?}", full_file_name))?;
+    copy(&mut bytes.as_ref(), &mut file)
+        .with_context(|| format!("could not write to {:?}", full_file_name))?;
     Ok(entry)
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        None => s,
+        Some((idx, _)) => &s[..idx],
+    }
 }

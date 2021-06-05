@@ -100,6 +100,6 @@ where
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Id {
-    pid: u32,
-    eid: u32,
+    pub pid: u32,
+    pub eid: u32,
 }
