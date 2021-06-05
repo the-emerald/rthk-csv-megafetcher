@@ -193,10 +193,11 @@ async fn write_to_file(
         .with_context(|| format!("could not create path {:?}", path.clone()))?;
 
     let full_file_name = {
-        let file_name = format!("{}_{}_{}",
-                                &entry.id.eid,
-                                &entry.episode_date,
-                                truncate_chars(&entry.episode_title, 32)
+        let file_name = format!(
+            "{}_{}_{}",
+            &entry.id.eid,
+            &entry.episode_date,
+            truncate_chars(&entry.episode_title, 32)
         );
 
         let extension = response
