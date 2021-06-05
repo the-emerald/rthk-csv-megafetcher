@@ -177,6 +177,8 @@ async fn main() -> anyhow::Result<()> {
     if !failed.is_empty() {
         println!("Run the program again to retry failed downloads.");
     }
+    // I have NO IDEA why, the last line is sometimes eaten up.
+    println!("Done");
 
     Ok(())
 }
