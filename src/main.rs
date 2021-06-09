@@ -6,13 +6,13 @@ use clap::{load_yaml, App};
 use core::time::Duration;
 use futures::TryFutureExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use rand::prelude::SliceRandom;
 use reqwest::Response;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::io::{copy, BufReader, BufWriter};
 use std::path::Path;
 use std::str::FromStr;
-use rand::prelude::SliceRandom;
 
 pub mod schema;
 
@@ -130,15 +130,9 @@ async fn main() -> anyhow::Result<()> {
             );
             name_bar.inc(1);
 
-            // Prefer m3u8 if possible
-            let url = entry
-                .m3u8_url
-                .clone()
-                .unwrap_or_else(|| entry.file_url.clone());
-
             // Make request from client
             let r = client
-                .get(url)
+                .get(entry.file_url.clone())
                 .send()
                 .map_err(|e| anyhow!(e))
                 .and_then(|response: Response| async {
@@ -162,6 +156,11 @@ async fn main() -> anyhow::Result<()> {
         .partition(Result::is_ok);
 
     total_progress_pb.finish();
+
+    // Show failed
+    for f in &failed {
+        println!("{:?}", f);
+    }
 
     // Update downloaded set
     for x in &ok {
@@ -200,12 +199,12 @@ async fn write_to_file(
         .with_context(|| format!("could not create path {:?}", path.clone()))?;
 
     let full_file_name = {
-        let file_name = format!(
+        let file_name = sanitize_filename::sanitize(format!(
             "{}_{}_{}",
             &entry.id.eid,
             &entry.episode_date,
             truncate_chars(&entry.episode_title, 32)
-        );
+        ));
 
         let extension = response
             .url()
