@@ -17,3 +17,4 @@ futures = "^0.3.15"
 bytes = "^1.0.1"
 indicatif = { git = "https://github.com/mitsuhiko/indicatif.git", branch = "main" }
 serde_json = "^1.0.64"
+rand = "^0.8.3"

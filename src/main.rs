@@ -12,6 +12,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{copy, BufReader, BufWriter};
 use std::path::Path;
 use std::str::FromStr;
+use rand::prelude::SliceRandom;
 
 pub mod schema;
 
@@ -81,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     // If not force, then also filter files already downloaded
-    let to_fetch = if !force {
+    let mut to_fetch = if !force {
         to_fetch
             .into_iter()
             .filter(|entry| !downloaded_files.contains(&entry.id))
@@ -90,11 +91,15 @@ async fn main() -> anyhow::Result<()> {
         to_fetch
     };
 
+    // Shuffle to prevent hitting blocks of "not found" and getting throttled hard
+    to_fetch.shuffle(&mut rand::thread_rng());
+    let to_fetch = to_fetch;
+
     // Set up what we need for fetching
     let semaphore = tokio::sync::Semaphore::new(16);
     let client = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(30))
         .build()
         .context("could not build client")?;
 
@@ -156,6 +161,8 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .partition(Result::is_ok);
 
+    total_progress_pb.finish();
+
     // Update downloaded set
     for x in &ok {
         // Always fine since we partitioned already.
@@ -177,8 +184,6 @@ async fn main() -> anyhow::Result<()> {
     if !failed.is_empty() {
         println!("Run the program again to retry failed downloads.");
     }
-    // I have NO IDEA why, the last line is sometimes eaten up.
-    println!("Done");
 
     Ok(())
 }
