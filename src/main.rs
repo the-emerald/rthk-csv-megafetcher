@@ -98,8 +98,8 @@ async fn main() -> anyhow::Result<()> {
     // Set up what we need for fetching
     let semaphore = tokio::sync::Semaphore::new(16);
     let client = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_secs(120))
-        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(600)) // 10 minutes
+        .connect_timeout(Duration::from_secs(60)) // 1 minute
         .build()
         .context("could not build client")?;
 
@@ -194,7 +194,9 @@ async fn write_to_file(
 ) -> anyhow::Result<Entry> {
     let path = output_dir
         .join(&entry.language.to_string())
-        .join(&entry.programme_title.to_string());
+        .join(&sanitize_filename::sanitize(
+            entry.programme_title.to_string(),
+        ));
     create_dir_all(path.clone())
         .with_context(|| format!("could not create path {:?}", path.clone()))?;
 
